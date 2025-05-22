@@ -33,9 +33,6 @@ def tour_cost(instance, tour):
 
 
 def generate_tsp_instance(num_cities, low=0.0, high=1.0):
-    """
-    Generate a TSP instance: array of shapes (num_cities, 2) with random coordinates.
-    """
     return np.random.uniform(low, high, size=(num_cities, 2))
 
 
