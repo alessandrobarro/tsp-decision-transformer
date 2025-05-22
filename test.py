@@ -22,7 +22,7 @@ def beam_search_decode(model, coords, init_rtg, device, beam_width, temperature=
     k = coords.size(0)
     alpha = temperature
 
-    # Beam iniziale
+    # Initial beam
     beams = [
         {
             "visited": torch.zeros(k, dtype=torch.bool, device=device).scatter_(
@@ -42,7 +42,8 @@ def beam_search_decode(model, coords, init_rtg, device, beam_width, temperature=
         for t in range(k - 1):
             candidates = []
             for b in beams:
-                # Costruisco le nuove sequenze di stati, timesteps e masks
+
+                # Construct the new data sequences of states, timesteps and masks
                 states2 = b["states"] + [build_state(coords, b["visited"])]
                 ts2 = b["timesteps"] + [torch.tensor([t + 1], device=device)]
                 mask_vec = (~b["visited"][1:]).to(device)
@@ -52,7 +53,7 @@ def beam_search_decode(model, coords, init_rtg, device, beam_width, temperature=
                 ts = torch.stack(ts2).unsqueeze(0)  # (1, t+1, 1)
                 ms = torch.stack(ms2).unsqueeze(0)  # (1, t+1, k-1)
 
-                # Azioni fin qui
+                # Actions until here
                 if b["tok_seq"]:
                     ac = (
                         torch.tensor(b["tok_seq"], dtype=torch.long, device=device).unsqueeze(0).unsqueeze(-1)
@@ -60,10 +61,10 @@ def beam_search_decode(model, coords, init_rtg, device, beam_width, temperature=
                 else:
                     ac = None
 
-                # Sequence di RTG fin qui
+                # RTGs until here
                 rtg_seq = torch.stack(b["rtgs"]).unsqueeze(0).unsqueeze(-1)  # (1, t+1)
 
-                # Forward pass condizionato su RTG
+                # Forward pass
                 logits, _ = model(
                     states=st,
                     actions=ac,
@@ -79,7 +80,8 @@ def beam_search_decode(model, coords, init_rtg, device, beam_width, temperature=
                 for idx in valid_inds.tolist():
                     prev = b["last_idx"]
                     nxt = idx + 1
-                    # Calcolo reward effettivo = -distanza
+                    
+                    # Compute stepwise reward
                     dist = torch.norm(coords[prev] - coords[nxt], p=2).item()
                     r_eff = -dist
                     new_rtg = b["rtgs"][-1] - r_eff
@@ -100,11 +102,12 @@ def beam_search_decode(model, coords, init_rtg, device, beam_width, temperature=
                         }
                     )
 
-            # Seleziono i beam migliori
+            # Select best beams
             beams = sorted(candidates, key=lambda x: x["score"], reverse=True)[:beam_width]
 
     best_beam = max(beams, key=lambda x: x["score"])
-    # Ritorno la sequenza di città (1-based)
+    
+    # Return the sequence (1-indexed)
     return [i + 1 for i in best_beam["tok_seq"]]
 
 
@@ -142,15 +145,9 @@ def main():
     teacher_lens, model_lens, two_opt_lens, chris_lens = [], [], [], []
 
     for coords, teacher_actions, rtgs in samples:
-        init_rtgs = rtgs[0] + 3.5
-
-        # two_opt_tour = two_opt_tsp(coords)
-        # wo_opt_length = tour_length(coords, two_opt_tour)
-        # two_opt_lens.append(two_opt_length)
-
-        # chris_tour = christofides_tsp(coords)
-        # chris_length = tour_length(coords, chris_tour)
-        # chris_lens.append(chris_length)
+        
+        # Target return
+        init_rtgs = rtgs[0]
 
         tm = tour_length(coords, teacher_actions)
         teacher_lens.append(tm)
@@ -160,14 +157,10 @@ def main():
 
     tmean = np.mean(teacher_lens)
     mmean = np.mean(model_lens)
-    # two_mean = np.mean(two_opt_lens)
-    # chris_mean = np.mean(chris_lens)
     gap = (mmean - tmean) / tmean * 100.0
 
     print(f"Teacher mean length: {tmean:.4f}")
     print(f"Model   mean length: {mmean:.4f}")
-    # print(f"Chris   mean length: {chris_mean:.4f}")
-    # print(f"Two     mean length: {two_mean:.4f}")
     print(f"Gap                : {gap:+.2f}%")
 
     for i, idx in enumerate(indices, 1):
