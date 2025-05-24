@@ -42,6 +42,7 @@ class Trainer:
             self.device = config.device
         self.model = self.model.to(self.device)
         print("running on device:", self.device)
+        print()
 
         # variables that will be assigned to trainer class later for logging and etc
         self.iter_num = 0
@@ -60,6 +61,7 @@ class Trainer:
             callback(self)
 
     def run(self):
+        losses = []
         model, config = self.model, self.config
 
         # setup the optimizer
@@ -95,6 +97,7 @@ class Trainer:
                 masks=batch["masks"],
                 targets=batch["targets"],
             )
+            losses.append(loss.detach().cpu().item())
 
             # backprop and update the parameters
             model.zero_grad(set_to_none=True)
@@ -112,3 +115,5 @@ class Trainer:
             # termination conditions
             if config.max_iters is not None and self.iter_num >= config.max_iters:
                 break
+
+        return losses

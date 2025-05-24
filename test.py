@@ -15,14 +15,11 @@ from utils import build_state, load_samples, plot_and_save, tour_length
 # DECODE
 # -----------------------------------------------------------------------------------------
 def beam_search_decode(model, coords, init_rtg, device, beam_width, temperature=1.0):
-    """
-    Beam-search rollout del Decision Transformer condizionato su return-to-go.
-    """
     model.eval()
     k = coords.size(0)
     alpha = temperature
 
-    # Initial beam
+    # init beams (beam_width = 1 is greedy deconding)
     beams = [
         {
             "visited": torch.zeros(k, dtype=torch.bool, device=device).scatter_(
@@ -43,7 +40,7 @@ def beam_search_decode(model, coords, init_rtg, device, beam_width, temperature=
             candidates = []
             for b in beams:
 
-                # Construct the new data sequences of states, timesteps and masks
+                # new sequences of states, timesteps and masks
                 states2 = b["states"] + [build_state(coords, b["visited"])]
                 ts2 = b["timesteps"] + [torch.tensor([t + 1], device=device)]
                 mask_vec = (~b["visited"][1:]).to(device)
@@ -53,7 +50,7 @@ def beam_search_decode(model, coords, init_rtg, device, beam_width, temperature=
                 ts = torch.stack(ts2).unsqueeze(0)  # (1, t+1, 1)
                 ms = torch.stack(ms2).unsqueeze(0)  # (1, t+1, k-1)
 
-                # Actions until here
+                # actions until here
                 if b["tok_seq"]:
                     ac = (
                         torch.tensor(b["tok_seq"], dtype=torch.long, device=device).unsqueeze(0).unsqueeze(-1)
@@ -64,7 +61,7 @@ def beam_search_decode(model, coords, init_rtg, device, beam_width, temperature=
                 # RTGs until here
                 rtg_seq = torch.stack(b["rtgs"]).unsqueeze(0).unsqueeze(-1)  # (1, t+1)
 
-                # Forward pass
+                # forward
                 logits, _ = model(
                     states=st,
                     actions=ac,
@@ -80,8 +77,8 @@ def beam_search_decode(model, coords, init_rtg, device, beam_width, temperature=
                 for idx in valid_inds.tolist():
                     prev = b["last_idx"]
                     nxt = idx + 1
-                    
-                    # Compute stepwise reward
+
+                    # compute the model step-wise reward
                     dist = torch.norm(coords[prev] - coords[nxt], p=2).item()
                     r_eff = -dist
                     new_rtg = b["rtgs"][-1] - r_eff
@@ -102,12 +99,12 @@ def beam_search_decode(model, coords, init_rtg, device, beam_width, temperature=
                         }
                     )
 
-            # Select best beams
+            # select best beams
             beams = sorted(candidates, key=lambda x: x["score"], reverse=True)[:beam_width]
 
     best_beam = max(beams, key=lambda x: x["score"])
     
-    # Return the sequence (1-indexed)
+    # return the city sequence (1-indexed)
     return [i + 1 for i in best_beam["tok_seq"]]
 
 
@@ -115,8 +112,8 @@ def beam_search_decode(model, coords, init_rtg, device, beam_width, temperature=
 # -----------------------------------------------------------------------------------------
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--dataset", default="scripts/data/GREEDY20/GREEDY20_TEST1K.json")
-    p.add_argument("--num_cities", type=int, default=20)
+    p.add_argument("--dataset", default="scripts/data/MIXED10/MIXED10_TEST1K.json")
+    p.add_argument("--num_cities", type=int, default=10)
     p.add_argument("--ckpt", default="scripts/checkpoints/ckpt_iter_500000.pt")
     p.add_argument("--save_dir", default="scripts/plots")
     p.add_argument("--num_beams", type=int, default=1)
@@ -142,41 +139,47 @@ def main():
     # evaluate
     samples = load_samples(args.dataset)
     indices = random.sample(range(len(samples)), min(args.num_plots, len(samples)))
-    teacher_lens, model_lens, two_opt_lens, chris_lens = [], [], [], []
+    teacher_lens, model_lens = [], []
+    initializations = []
 
     for coords, teacher_actions, rtgs in samples:
+
+        # TARGET RTG 𝓡₁=R₁+𝞭
+        init_rtgs = rtgs[0] # + 𝞭
+        initializations.append(init_rtgs)
         
-        # Target return
-        init_rtgs = rtgs[0]
+        teacher_len = tour_length(coords, teacher_actions)
+        teacher_lens.append(teacher_len)
+        
+        model_tours = beam_search_decode(model, coords.to(device), init_rtgs, device, args.num_beams)
+        model_lens.append(tour_length(coords, model_tours))
 
-        tm = tour_length(coords, teacher_actions)
-        teacher_lens.append(tm)
-
-        ml = beam_search_decode(model, coords.to(device), init_rtgs, device, args.num_beams)
-        model_lens.append(tour_length(coords, ml))
+    mean_initializations = np.mean(initializations)
 
     tmean = np.mean(teacher_lens)
     mmean = np.mean(model_lens)
     gap = (mmean - tmean) / tmean * 100.0
 
-    print(f"Teacher mean length: {tmean:.4f}")
-    print(f"Model   mean length: {mmean:.4f}")
-    print(f"Gap                : {gap:+.2f}%")
+    print()
+    print(f"MEAN   TARGET   RTG: {mean_initializations}")
+    print(f"TEACHER MEAN LENGTH: {tmean:.4f}")
+    print(f"MODEL  MEAN  LENGTH: {mmean:.4f}")
+    print(f"RELATIVE    GAP    : {gap:+.2f}%")
 
-    for i, idx in enumerate(indices, 1):
-        coords, teacher_actions, rtgs = samples[idx]
-        init_rtgs = rtgs[0]
-        coords = coords.to(device)
-        model_tour = beam_search_decode(model, coords, init_rtgs, device, args.num_beams)
-        plot_and_save(
-            i,
-            coords.cpu(),
-            teacher_actions,
-            model_tour,
-            tour_length(coords, teacher_actions),
-            tour_length(coords, model_tour),
-            args.save_dir,
-        )
+    #for i, idx in enumerate(indices, 1):
+    #    coords, teacher_actions, rtgs = samples[idx]
+    #    init_rtgs = rtgs[0]
+    #    coords = coords.to(device)
+    #    model_tour = beam_search_decode(model, coords, init_rtgs, device, args.num_beams)
+    #    plot_and_save(
+    #        i,
+    #        coords.cpu(),
+    #        teacher_actions,
+    #        model_tour,
+    #        tour_length(coords, teacher_actions),
+    #        tour_length(coords, model_tour),
+    #        args.save_dir,
+    #    )
 
 
 if __name__ == "__main__":

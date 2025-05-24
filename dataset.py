@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 import torch
 from torch.utils.data import Dataset
-from utils import pad_collate
 
 
 class TrajectoryDataset(Dataset):
@@ -38,7 +37,7 @@ class TrajectoryDataset(Dataset):
         states   = []
         for a in actions:
             states.append(self._build_state(coords, visited))
-            visited[a] = 1.0                                # mark the city just visited
+            visited[a] = 1.0                                # mark the city we just visited
 
         actions_  = [a - 1 for a in actions]
 

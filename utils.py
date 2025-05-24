@@ -26,19 +26,6 @@ def set_seed(seed=54):
     torch.cuda.manual_seed_all(seed)
 
 
-def setup_logging(config):
-    """monotonous bookkeeping"""
-    work_dir = config.system.work_dir
-    # create the work directory if it doesn't already exist
-    os.makedirs(work_dir, exist_ok=True)
-    # log the args (if any)
-    with open(os.path.join(work_dir, "args.txt"), "w") as f:
-        f.write(" ".join(sys.argv))
-    # log the config itself
-    with open(os.path.join(work_dir, "config.json"), "w") as f:
-        f.write(json.dumps(config.to_dict(), indent=4))
-
-
 def load_samples(path):
     raw = json.loads(Path(path).read_text())
     samples = []
@@ -51,32 +38,21 @@ def load_samples(path):
 
 
 def pad_collate(batch):
+    # not being used atm, we train on trajevtories of same size
     return default_collate(batch)
 
 
-def plot_and_save(idx, coords, teacher, model_tour, tlength, mlength, save_dir):
+def plot_and_save(idx, coords, tour, length, save_dir):
     os.makedirs(save_dir, exist_ok=True)
     # prepare full orders including return to 0
-    t_order = [0] + teacher + [0]
-    m_order = [0] + model_tour + [0]
-    t_pts = coords[t_order].numpy()
-    m_pts = coords[m_order].numpy()
-
-    # teacher plot
-    fig, ax = plt.subplots()
-    ax.scatter(coords[:, 0], coords[:, 1], s=20)
-    ax.plot(t_pts[:, 0], t_pts[:, 1], "-o", label=f"Teacher Tour {tlength}")
-    ax.set_title(f"Sample {idx}: Teacher")
-    ax.axis("equal")
-    ax.legend()
-    fig.savefig(os.path.join(save_dir, f"sample_{idx}_teacher.png"))
-    plt.close(fig)
+    tour_ = [0] + tour + [0]
+    points = coords[tour_].numpy()
 
     # model plot
     fig, ax = plt.subplots()
     ax.scatter(coords[:, 0], coords[:, 1], s=20)
-    ax.plot(m_pts[:, 0], m_pts[:, 1], "-x", label=f"Model Tour {mlength}")
-    ax.set_title(f"Sample {idx}: Model")
+    ax.plot(points[:, 0], points[:, 1], "-x", label=f"Model Tour")
+    ax.set_title(f"Sample {idx}: Model, len = {length}")
     ax.axis("equal")
     ax.legend()
     fig.savefig(os.path.join(save_dir, f"sample_{idx}_model.png"))

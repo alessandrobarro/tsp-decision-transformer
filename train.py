@@ -10,22 +10,24 @@ import torch
 from dataset import TrajectoryDataset
 from model import GPT
 from trainer import Trainer
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 # PARSE ARGS
 # -----------------------------------------------------------------------------------------
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--dataset", default="scripts/data/MIXED10/MIXED10_TRAIN1M.json")
+    p.add_argument("--dataset", default="scripts/data/MIXED10/MIXED10_TEST1K.json")
     p.add_argument("--num_cities", type=int, default=10)
     p.add_argument("--batch_size", type=int, default=64)
     p.add_argument("--learning_rate", type=float, default=1e-4)
     p.add_argument("--weight_decay", type=float, default=0.1)
-    p.add_argument("--n_layer", type=int, default=8)
-    p.add_argument("--n_head", type=int, default=8)
-    p.add_argument("--n_embd", type=int, default=256)
+    p.add_argument("--n_layer", type=int, default=1)
+    p.add_argument("--n_head", type=int, default=1)
+    p.add_argument("--n_embd", type=int, default=64)
     p.add_argument("--model_type", choices=["reward_conditioned", "naive"], default="reward_conditioned")
-    p.add_argument("--max_iters", type=int, default=500001)
+    p.add_argument("--max_iters", type=int, default=2000)
     p.add_argument("--log_every", type=int, default=1000)
     p.add_argument("--save_every", type=int, default=50000)
     p.add_argument("--checkpoint_dir", type=str, default="scripts/checkpoints")
@@ -68,7 +70,7 @@ def main():
 
     def logger(tr):
         if tr.iter_num % args.log_every == 0:
-            print(f"iter {tr.iter_num:8d} | " f"loss {tr.last_loss:.4f} | " f"{tr.iter_dt*1000:6.1f} ms/iter")
+            print(f"ITER {tr.iter_num:8d} | " f"LOSS {tr.last_loss:.4f} | " f"{tr.iter_dt*1000:6.1f} ms/iter")
 
     def checkpoint(tr):
         if (tr.iter_num % args.save_every == 0) or (tr.iter_num == trainer_cfg.max_iters):
@@ -81,12 +83,16 @@ def main():
                 },
                 path,
             )
-            print(f"✓ saved checkpoint → {path}")
+            print(f"\n✩ SAVED CHECKPOINT {path}\n")
 
     trainer.add_callback("on_batch_end", logger)
     trainer.add_callback("on_batch_end", checkpoint)
 
-    trainer.run()
+    losses = trainer.run()
+
+    fig, ax = plt.subplots()
+    ax.plot(losses)
+    fig.savefig("scripts/plots/loss_over_timesteps")
 
 
 if __name__ == "__main__":
